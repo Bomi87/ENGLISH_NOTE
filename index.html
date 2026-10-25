@@ -10,7 +10,7 @@
   </style>
 </head>
 <body>
-<header><small>Personal Vocabulary Journal</small><h1>My English Bank</h1>\</header>
+<header><small>Personal Vocabulary Journal</small><h1>My English Bank</h1></header>
 <main>
   <div class="toolbar"><input id="search" type="search" placeholder="표현, 뜻, 예문 검색" aria-label="저장된 표현 검색"><button class="btn primary" id="toggleForm">+ 새 표현 추가</button><button class="btn" id="export">백업 저장</button><button class="btn" id="importBtn">백업 불러오기</button><input type="file" id="importFile" accept="application/json,.json" class="hidden"></div>
   <section id="editor" class="panel hidden"><h2 id="formTitle">새 표현 등록</h2><form id="entryForm"><div class="fields"><div><label for="phrase">영어 단어·숙어 *</label><input id="phrase" required placeholder="예: On my own merits" maxlength="250"></div><div><label for="meaning">한국어 뜻 (선택)</label><input id="meaning" placeholder="예: 내 자신의 능력으로" maxlength="500"></div></div><div id="examples" style="margin-top:20px"></div><div class="row between"><button type="button" class="btn" id="addExample">+ 예문 추가 (최대 3개)</button><span class="helper">예문과 번역 모두 선택 사항</span></div><div class="row end" style="margin-top:20px"><button type="button" class="btn" id="cancel">취소</button><button type="submit" class="btn primary">저장하기</button></div></form></section>
