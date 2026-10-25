@@ -13,7 +13,7 @@
 <header><small>PERSONAL VOCABULARY JOURNAL</small><h1>My English Bank</h1></header>
 <main>
  <section class="panel" id="loginPanel"><div class="row between"><strong>Google Sheets 동기화</strong><span id="status" class="status">연결 중...</span></div></section>
- <div class="toolbar row"><input id="search" type="search" placeholder="단어, 뜻, 예문 검색" aria-label="검색"><button id="new" class="btn primary" disabled>+ 새 표현</button><button id="reload" class="btn" disabled>새로고침</button><button id="export" class="btn" disabled>백업 저장</button><button id="importButton" class="btn" disabled>백업 불러오기</button><input id="importFile" type="file" accept=".json,application/json" class="hidden"></div>
+ <div class="toolbar row"><input id="search" type="search" placeholder="단어, 뜻, 예문 검색" aria-label="검색"><button id="new" class="btn primary" disabled>+ 새 표현</button><button id="reload" class="btn" disabled>새로고침</button></div>
  <section id="editor" class="panel hidden"><h2 id="editorTitle">새 표현</h2><form id="entryForm"><div class="fields"><div><label for="phrase">영어 단어·숙어 *</label><input id="phrase" required maxlength="250" placeholder="예: On my own merits"></div><div><label for="meaning">한국어 뜻 (선택)</label><input id="meaning" maxlength="500" placeholder="예: 내 실력으로"></div></div><div id="examples" class="examples"></div><div class="row between"><button id="addExample" class="btn" type="button">+ 예문 추가 (최대 3개)</button><span class="hint">영어 예문·한국어 번역 모두 선택</span></div><div class="row end" style="margin-top:18px"><button id="cancel" type="button" class="btn">취소</button><button id="save" type="submit" class="btn primary">저장하기</button></div></form></section>
  <div class="row between" style="margin:20px 2px"><strong>Saved Expressions</strong><span class="hint" id="count">0개 표현</span></div><div id="cards" class="cards"></div><div id="empty" class="empty">먼저 Google Sheets에 연결해 주세요.</div><p class="footer">데이터는 Google Sheets에 저장됩니다. 앱을 여러 기기에서 열어도 같은 목록을 불러올 수 있습니다.</p>
 </main><div id="flash" class="hidden" role="status"></div>
@@ -27,7 +27,7 @@ const pending=new Map();
 function flash(s){$('flash').textContent=s;$('flash').classList.remove('hidden');clearTimeout(flash.t);flash.t=setTimeout(()=>$('flash').classList.add('hidden'),3000)}
 function status(s,cls=''){$('status').textContent=s;$('status').className='status '+cls}
 function element(tag,cls,txt){const n=document.createElement(tag);if(cls)n.className=cls;if(txt!==undefined)n.textContent=txt;return n}
-function controls(enabled){['new','reload','export','importButton'].forEach(id=>$(id).disabled=!enabled)}
+function controls(enabled){['new','reload'].forEach(id=>$(id).disabled=!enabled)}
 function setBusy(v){busy=v;$('save').disabled=v;$('reload').disabled=v}
 function allowedOrigin(origin){try{const url=new URL(origin);return url.protocol==='https:'&&(url.hostname==='script.google.com'||url.hostname==='script.googleusercontent.com'||url.hostname.endsWith('.googleusercontent.com'))}catch{return false}}
 window.addEventListener('message',event=>{
@@ -52,7 +52,7 @@ function api(action,fields={}){
   });
 }
 async function load(){setBusy(true);status('불러오는 중...');try{const data=await api('list');if(!Array.isArray(data))throw Error('목록 응답 형식이 잘못되었습니다.');records=data;render();controls(true);status('Google Sheets 연결됨','ok')}catch(e){status('연결 실패: '+e.message,'bad');flash(e.message);throw e}finally{setBusy(false);$('reload').disabled=false}}
-load().catch(()=>{['new','export','importButton'].forEach(id=>$(id).disabled=true)});
+load().catch(()=>{$('new').disabled=true});
 $('reload').onclick=()=>load().catch(()=>{});
 function exampleRow(en='',ko=''){
  const row=element('div','example');const head=element('div','row between');const label=element('strong','','예문');const remove=element('button','btn','삭제');remove.type='button';remove.onclick=()=>{row.remove();renumber()};head.append(label,remove);
@@ -67,8 +67,6 @@ $('entryForm').onsubmit=async e=>{e.preventDefault();if(busy)return;const phrase
 function render(){const q=$('search').value.trim().toLowerCase();const shown=records.filter(r=>[r.phrase,r.meaning,...(r.examples||[]).flatMap(x=>[x.en,x.ko])].some(x=>String(x||'').toLowerCase().includes(q)));$('cards').replaceChildren();$('count').textContent=`${records.length}개 표현 / 검색 ${shown.length}개`;$('empty').classList.toggle('hidden',shown.length>0);$('empty').textContent=records.length?'검색 결과가 없어요.':'저장된 표현이 없어요. 새 표현을 추가해 보세요.';
  shown.forEach(r=>{const card=element('article','card');card.append(element('span','tag','EXPRESSION'),element('h3','',r.phrase));if(r.meaning)card.append(element('p','meaning',r.meaning));(r.examples||[]).forEach((ex,i)=>{const sample=element('div','sample');sample.append(element('span','tag','EXAMPLE '+String(i+1).padStart(2,'0')));if(ex.en)sample.append(element('p','en',ex.en));if(ex.ko)sample.append(element('p','ko',ex.ko));card.append(sample)});const actions=element('div','actions row');const edit=element('button','btn','수정'),del=element('button','btn danger','삭제');edit.onclick=()=>editor(r);del.onclick=async()=>{if(!confirm('“'+r.phrase+'” 표현을 삭제할까요?'))return;del.disabled=true;try{await api('delete',{id:r.id});await load();flash('삭제했어요.')}catch(e){flash(e.message)}finally{del.disabled=false}};actions.append(edit,del);card.append(actions);$('cards').append(card)})}
 $('search').oninput=render;
-$('export').onclick=()=>{const body={app:'My English Bank',version:1,exportedAt:new Date().toISOString(),records};const url=URL.createObjectURL(new Blob([JSON.stringify(body,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='english-bank-backup-'+new Date().toISOString().slice(0,10)+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
-$('importButton').onclick=()=>$('importFile').click();$('importFile').onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{if(file.size>10*1024*1024)throw Error('최대 10MB 파일만 가능합니다.');const data=JSON.parse(await file.text());if(data.app!=='My English Bank'||!Array.isArray(data.records))throw Error('올바른 백업 파일이 아닙니다.');const items=data.records.filter(x=>x&&typeof x.phrase==='string'&&x.phrase.trim()).map(x=>({phrase:x.phrase,meaning:String(x.meaning||''),examples:Array.isArray(x.examples)?x.examples.slice(0,3).map(a=>({en:String(a.en||''),ko:String(a.ko||'')})):[]}));if(!confirm(`${items.length}개 표현을 Google Sheets에 새 항목으로 추가할까요? 기존 항목은 유지됩니다.`))return;setBusy(true);let done=0;for(const record of items){await api('create',{record});done++}await load();flash(done+'개 표현을 가져왔어요.')}catch(err){flash(err.message+' (이미 저장된 항목은 유지됩니다.)')}finally{setBusy(false);e.target.value=''}};
 })();
 </script>
 </body>
