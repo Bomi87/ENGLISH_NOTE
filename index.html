@@ -10,7 +10,7 @@
 </style>
 </head>
 <body>
-<header><small>PERSONAL VOCABULARY JOURNAL</small><h1>My English Bank</h1><p></p></header>
+<header><small>PERSONAL VOCABULARY JOURNAL</small><h1>My English Bank</h1></header>
 <main>
  <section class="panel" id="loginPanel"><div class="row between"><strong>Google Sheets 동기화</strong><span id="status" class="status">연결 중...</span></div></section>
  <div class="toolbar row"><input id="search" type="search" placeholder="단어, 뜻, 예문 검색" aria-label="검색"><button id="new" class="btn primary" disabled>+ 새 표현</button><button id="reload" class="btn" disabled>새로고침</button><button id="export" class="btn" disabled>백업 저장</button><button id="importButton" class="btn" disabled>백업 불러오기</button><input id="importFile" type="file" accept=".json,application/json" class="hidden"></div>
@@ -51,8 +51,8 @@ function api(action,fields={}){
     try{form.submit()}catch(e){clearTimeout(timeout);pending.delete(requestId);cleanup();reject(e)}
   });
 }
-async function load(){setBusy(true);status('불러오는 중...');try{const data=await api('list');if(!Array.isArray(data))throw Error('목록 응답 형식이 잘못되었습니다.');records=data;render();controls(true);status('Google Sheets 연결됨','ok')}catch(e){status('연결 실패','bad');flash(e.message);throw e}finally{setBusy(false)}}
-load().catch(()=>{controls(false)});
+async function load(){setBusy(true);status('불러오는 중...');try{const data=await api('list');if(!Array.isArray(data))throw Error('목록 응답 형식이 잘못되었습니다.');records=data;render();controls(true);status('Google Sheets 연결됨','ok')}catch(e){status('연결 실패: '+e.message,'bad');flash(e.message);throw e}finally{setBusy(false);$('reload').disabled=false}}
+load().catch(()=>{['new','export','importButton'].forEach(id=>$(id).disabled=true)});
 $('reload').onclick=()=>load().catch(()=>{});
 function exampleRow(en='',ko=''){
  const row=element('div','example');const head=element('div','row between');const label=element('strong','','예문');const remove=element('button','btn','삭제');remove.type='button';remove.onclick=()=>{row.remove();renumber()};head.append(label,remove);
