@@ -12,7 +12,7 @@
 <body>
 <header><small>PERSONAL VOCABULARY JOURNAL</small><h1>My English Bank</h1><p></p></header>
 <main>
- <section class="panel" id="loginPanel"><h2>Google Sheets 연결</h2><div class="fields"><div><label for="pass">Apps Script 비밀번호</label><input id="pass" type="password" autocomplete="off" placeholder="APP_PASSWORD 입력"></div><div class="row" style="align-items:end"><button id="connect" class="btn primary" type="button">연결하기</button><span id="status" class="status">연결 전</span></div></div><p class="hint">비밀번호는 브라우저 메모리에만 보관하고, GitHub 코드나 localStorage에는 저장하지 않습니다.</p></section>
+ <section class="panel" id="loginPanel"><div class="row between"><strong>Google Sheets 동기화</strong><span id="status" class="status">연결 중...</span></div></section>
  <div class="toolbar row"><input id="search" type="search" placeholder="단어, 뜻, 예문 검색" aria-label="검색"><button id="new" class="btn primary" disabled>+ 새 표현</button><button id="reload" class="btn" disabled>새로고침</button><button id="export" class="btn" disabled>백업 저장</button><button id="importButton" class="btn" disabled>백업 불러오기</button><input id="importFile" type="file" accept=".json,application/json" class="hidden"></div>
  <section id="editor" class="panel hidden"><h2 id="editorTitle">새 표현</h2><form id="entryForm"><div class="fields"><div><label for="phrase">영어 단어·숙어 *</label><input id="phrase" required maxlength="250" placeholder="예: On my own merits"></div><div><label for="meaning">한국어 뜻 (선택)</label><input id="meaning" maxlength="500" placeholder="예: 내 실력으로"></div></div><div id="examples" class="examples"></div><div class="row between"><button id="addExample" class="btn" type="button">+ 예문 추가 (최대 3개)</button><span class="hint">영어 예문·한국어 번역 모두 선택</span></div><div class="row end" style="margin-top:18px"><button id="cancel" type="button" class="btn">취소</button><button id="save" type="submit" class="btn primary">저장하기</button></div></form></section>
  <div class="row between" style="margin:20px 2px"><strong>Saved Expressions</strong><span class="hint" id="count">0개 표현</span></div><div id="cards" class="cards"></div><div id="empty" class="empty">먼저 Google Sheets에 연결해 주세요.</div><p class="footer">데이터는 Google Sheets에 저장됩니다. 앱을 여러 기기에서 열어도 같은 목록을 불러올 수 있습니다.</p>
@@ -22,13 +22,13 @@
 'use strict';
 const API_URL='https://script.google.com/macros/s/AKfycbwKm9Cc_j1_fHrCpu8cIdt1TbtXUH9RKKAOwf0eN92vOymBAEPGFcIbObEnq5C_XEIlsA/exec';
 const $=id=>document.getElementById(id);
-let password='',records=[],editing=null,busy=false,sequence=0;
+let records=[],editing=null,busy=false,sequence=0;
 const pending=new Map();
 function flash(s){$('flash').textContent=s;$('flash').classList.remove('hidden');clearTimeout(flash.t);flash.t=setTimeout(()=>$('flash').classList.add('hidden'),3000)}
 function status(s,cls=''){$('status').textContent=s;$('status').className='status '+cls}
 function element(tag,cls,txt){const n=document.createElement(tag);if(cls)n.className=cls;if(txt!==undefined)n.textContent=txt;return n}
 function controls(enabled){['new','reload','export','importButton'].forEach(id=>$(id).disabled=!enabled)}
-function setBusy(v){busy=v;$('save').disabled=v;$('connect').disabled=v;$('reload').disabled=v}
+function setBusy(v){busy=v;$('save').disabled=v;$('reload').disabled=v}
 function allowedOrigin(origin){try{const url=new URL(origin);return url.protocol==='https:'&&(url.hostname==='script.google.com'||url.hostname==='script.googleusercontent.com'||url.hostname.endsWith('.googleusercontent.com'))}catch{return false}}
 window.addEventListener('message',event=>{
   if(!allowedOrigin(event.origin))return;
@@ -40,12 +40,11 @@ window.addEventListener('message',event=>{
 // A normal cross-origin fetch is blocked by Apps Script CORS restrictions.
 // A hidden form POST + iframe message is used instead.
 function api(action,fields={}){
-  if(!password)return Promise.reject(new Error('비밀번호를 먼저 입력해 주세요.'));
   const requestId=crypto.randomUUID?crypto.randomUUID():String(Date.now())+'-'+(++sequence)+'-'+Math.random();
   return new Promise((resolve,reject)=>{
     const iframe=document.createElement('iframe');iframe.name='eb_frame_'+(++sequence);iframe.style.display='none';iframe.setAttribute('aria-hidden','true');
     const form=document.createElement('form');form.method='POST';form.action=API_URL;form.target=iframe.name;form.style.display='none';
-    const input=document.createElement('input');input.type='hidden';input.name='payload';input.value=JSON.stringify({action,password,requestId,...fields});form.append(input);
+    const input=document.createElement('input');input.type='hidden';input.name='payload';input.value=JSON.stringify({action,requestId,...fields});form.append(input);
     const cleanup=()=>{form.remove();iframe.remove()};
     const timeout=setTimeout(()=>{pending.delete(requestId);cleanup();reject(new Error('응답 시간 초과. Apps Script 배포 및 응답 설정을 확인해 주세요.'))},25000);
     pending.set(requestId,{resolve,reject,cleanup,timeout});document.body.append(iframe,form);
@@ -53,7 +52,7 @@ function api(action,fields={}){
   });
 }
 async function load(){setBusy(true);status('불러오는 중...');try{const data=await api('list');if(!Array.isArray(data))throw Error('목록 응답 형식이 잘못되었습니다.');records=data;render();controls(true);status('Google Sheets 연결됨','ok')}catch(e){status('연결 실패','bad');flash(e.message);throw e}finally{setBusy(false)}}
-$('connect').onclick=async()=>{const value=$('pass').value;if(!value){flash('비밀번호를 입력해 주세요.');return}password=value;$('pass').value='';try{await load()}catch{password='';controls(false)}};
+load().catch(()=>{controls(false)});
 $('reload').onclick=()=>load().catch(()=>{});
 function exampleRow(en='',ko=''){
  const row=element('div','example');const head=element('div','row between');const label=element('strong','','예문');const remove=element('button','btn','삭제');remove.type='button';remove.onclick=()=>{row.remove();renumber()};head.append(label,remove);
