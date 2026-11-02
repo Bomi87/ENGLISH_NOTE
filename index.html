@@ -13,6 +13,8 @@
     font-size: 16px !important;
   }
 }
+/* Bookmark and compact summary views */
+.card{position:relative;cursor:pointer;scroll-margin-top:20px}.card.is-bookmarked{border:2px solid #4d67df;background:#f1f4ff;box-shadow:0 0 0 3px #4d67df20}.bookmark-label{display:none;color:#4059cb;font-size:12px;font-weight:800;margin-bottom:8px}.is-bookmarked .bookmark-label{display:block}.card:focus-visible{outline:3px solid #4d67df;outline-offset:3px}.view-nav{margin:16px 0;gap:8px}.view-nav .btn[aria-pressed="true"]{background:#4d67df;color:white}.bookmark-info{font-size:13px;color:#62718b;overflow-wrap:anywhere}.summary-table{width:100%;table-layout:fixed;border-collapse:collapse;background:white;border:1px solid #e2e7f0}.summary-table th,.summary-table td{text-align:left;padding:10px 12px;border-bottom:1px solid #e2e7f0;overflow-wrap:anywhere;vertical-align:top}.summary-table th{background:#e9eef8;color:#30436e}.summary-table th:first-child{width:40%}.summary-table button{border:0;background:none;color:#19243a;font:inherit;font-weight:700;text-align:left;padding:0;overflow-wrap:anywhere;cursor:pointer}.summary-table tr.is-bookmarked td{background:#eaf0ff}.summary-table tr.is-bookmarked button:before{content:'🔖 ';}.summary-table button:focus-visible{outline:2px solid #4d67df}main>*{min-width:0}.toolbar input{min-width:0;flex-basis:180px}@media(max-width:600px){.summary-table th,.summary-table td{padding:9px 8px;font-size:13px}.view-nav .btn{padding:10px}}
 </style>
 </head>
 <body>
@@ -20,8 +22,9 @@
 <main>
  <section class="panel" id="loginPanel"><div class="row between"><strong>Google Sheets 동기화</strong><span id="status" class="status">연결 중...</span></div></section>
  <div class="toolbar row"><input id="search" type="search" placeholder="단어, 뜻, 예문 검색" aria-label="검색"><button id="new" class="btn primary" disabled>+ 새 표현</button><button id="reload" class="btn" disabled>새로고침</button></div>
+ <nav class="row view-nav" aria-label="보기 선택"><button id="viewCards" type="button" class="btn" aria-pressed="true">카드 보기</button><button id="viewSummary" type="button" class="btn" aria-pressed="false">Summary · 단어 / 뜻</button><button id="goBookmark" type="button" class="btn">🔖 책갈피로 이동</button><button id="clearBookmark" type="button" class="btn">책갈피 해제</button></nav><p id="bookmarkInfo" class="bookmark-info" role="status"></p>
  <section id="editor" class="panel hidden"><h2 id="editorTitle">새 표현</h2><form id="entryForm"><div class="fields"><div><label for="phrase">영어 단어·숙어 *</label><input id="phrase" required maxlength="250" placeholder="예: On my own merits"></div><div><label for="meaning">한국어 뜻 (선택)</label><input id="meaning" maxlength="500" placeholder="예: 내 실력으로"></div></div><div id="examples" class="examples"></div><div class="row between"><button id="addExample" class="btn" type="button">+ 예문 추가 (최대 3개)</button><span class="hint">영어 예문·한국어 번역 모두 선택</span></div><div class="row end" style="margin-top:18px"><button id="cancel" type="button" class="btn">취소</button><button id="save" type="submit" class="btn primary">저장하기</button></div></form></section>
- <div class="row between" style="margin:20px 2px"><strong>Saved Expressions</strong><span class="hint" id="count">0개 표현</span></div><div id="cards" class="cards"></div><div id="empty" class="empty">먼저 Google Sheets에 연결해 주세요.</div><p class="footer">데이터는 Google Sheets에 저장됩니다. 앱을 여러 기기에서 열어도 같은 목록을 불러올 수 있습니다.</p>
+ <div class="row between" style="margin:20px 2px"><strong>Saved Expressions</strong><span class="hint" id="count">0개 표현</span></div><div id="cards" class="cards"></div><section id="summaryView" class="hidden" aria-label="단어와 뜻 요약"><table class="summary-table"><thead><tr><th scope="col">영어 단어·숙어 (B열)</th><th scope="col">한국어 뜻 (C열)</th></tr></thead><tbody id="summaryBody"></tbody></table></section><div id="empty" class="empty">먼저 Google Sheets에 연결해 주세요.</div><p class="footer">데이터는 Google Sheets에 저장됩니다. 앱을 여러 기기에서 열어도 같은 목록을 불러올 수 있습니다.</p>
 </main><div id="flash" class="hidden" role="status"></div>
 <script>
 (()=>{
@@ -30,6 +33,22 @@ const API_URL='https://script.google.com/macros/s/AKfycbwKm9Cc_j1_fHrCpu8cIdt1Tb
 const $=id=>document.getElementById(id);
 let records=[],editing=null,busy=false,sequence=0;
 const pending=new Map();
+const BOOKMARK_KEY='english-bank-bookmark-v1';
+let bookmarkId=null,initialRestoreDone=false;
+try{bookmarkId=localStorage.getItem(BOOKMARK_KEY)||null}catch{}
+function recordKey(r){return String(r.id)}
+function updateBookmarkUI(){
+ const marked=records.find(r=>recordKey(r)===bookmarkId);
+ document.querySelectorAll('[data-record-id]').forEach(n=>{const selected=n.dataset.recordId===bookmarkId;n.classList.toggle('is-bookmarked',selected);if(n.classList.contains('card'))n.setAttribute('aria-label',n.dataset.phrase+(selected?' · 책갈피 선택됨':' · 클릭하여 책갈피 설정'))});
+ $('bookmarkInfo').textContent=marked?'🔖 책갈피: '+marked.phrase+' · 카드 선택 시 변경됩니다.':'카드를 선택하면 책갈피로 저장됩니다. 다음 접속 시 해당 위치로 이동합니다.';
+ $('goBookmark').disabled=!marked;$('clearBookmark').disabled=!bookmarkId;
+}
+function setBookmark(r){bookmarkId=recordKey(r);let saved=true;try{localStorage.setItem(BOOKMARK_KEY,bookmarkId)}catch{saved=false}updateBookmarkUI();if(!saved)flash('브라우저 저장이 제한되어 이번 접속에서만 책갈피가 유지됩니다.')}
+function scrollToRecord(id){const card=[...$('cards').children].find(n=>n.dataset.recordId===id);if(card)requestAnimationFrame(()=>card.scrollIntoView({block:'start',behavior:'auto'}))}
+function showView(summary){$('cards').classList.toggle('hidden',summary);$('summaryView').classList.toggle('hidden',!summary);$('viewCards').setAttribute('aria-pressed',String(!summary));$('viewSummary').setAttribute('aria-pressed',String(summary));if(summary)closeEditor()}
+$('viewCards').onclick=()=>showView(false);$('viewSummary').onclick=()=>showView(true);
+$('goBookmark').onclick=()=>{if(!bookmarkId)return;$('search').value='';render();showView(false);scrollToRecord(bookmarkId)};
+$('clearBookmark').onclick=()=>{bookmarkId=null;try{localStorage.removeItem(BOOKMARK_KEY)}catch{}updateBookmarkUI()};
 function flash(s){$('flash').textContent=s;$('flash').classList.remove('hidden');clearTimeout(flash.t);flash.t=setTimeout(()=>$('flash').classList.add('hidden'),3000)}
 function status(s,cls=''){$('status').textContent=s;$('status').className='status '+cls}
 function element(tag,cls,txt){const n=document.createElement(tag);if(cls)n.className=cls;if(txt!==undefined)n.textContent=txt;return n}
@@ -57,7 +76,7 @@ function api(action,fields={}){
     try{form.submit()}catch(e){clearTimeout(timeout);pending.delete(requestId);cleanup();reject(e)}
   });
 }
-async function load(){setBusy(true);status('불러오는 중...');try{const data=await api('list');if(!Array.isArray(data))throw Error('목록 응답 형식이 잘못되었습니다.');records=data;render();controls(true);status('Google Sheets 연결됨','ok')}catch(e){status('연결 실패: '+e.message,'bad');flash(e.message);throw e}finally{setBusy(false);$('reload').disabled=false}}
+async function load(){setBusy(true);status('불러오는 중...');try{const data=await api('list');if(!Array.isArray(data))throw Error('목록 응답 형식이 잘못되었습니다.');records=data;render();if(!initialRestoreDone){initialRestoreDone=true;if(bookmarkId)scrollToRecord(bookmarkId)}controls(true);status('Google Sheets 연결됨','ok')}catch(e){status('연결 실패: '+e.message,'bad');flash(e.message);throw e}finally{setBusy(false);$('reload').disabled=false}}
 load().catch(()=>{$('new').disabled=true});
 $('reload').onclick=()=>load().catch(()=>{});
 function exampleRow(en='',ko=''){
@@ -71,7 +90,8 @@ function closeEditor(){editing=null;$('editor').classList.add('hidden')}
 $('new').onclick=()=>editor();$('cancel').onclick=closeEditor;$('addExample').onclick=()=>addExample();
 $('entryForm').onsubmit=async e=>{e.preventDefault();if(busy)return;const phrase=$('phrase').value.trim(),meaning=$('meaning').value.trim();if(!phrase)return;const examples=[...$('examples').children].map(row=>({en:row.querySelector('.enInput').value.trim(),ko:row.querySelector('.koInput').value.trim()})).filter(x=>x.en||x.ko);const record={phrase,meaning,examples};if(editing)record.id=editing;setBusy(true);try{await api(editing?'update':'create',{record});closeEditor();await load();flash('Google Sheets에 저장했어요.')}catch(err){flash(err.message)}finally{setBusy(false)}};
 function render(){const q=$('search').value.trim().toLowerCase();const shown=records.filter(r=>[r.phrase,r.meaning,...(r.examples||[]).flatMap(x=>[x.en,x.ko])].some(x=>String(x||'').toLowerCase().includes(q)));$('cards').replaceChildren();$('count').textContent=`${records.length}개 표현 / 검색 ${shown.length}개`;$('empty').classList.toggle('hidden',shown.length>0);$('empty').textContent=records.length?'검색 결과가 없어요.':'저장된 표현이 없어요. 새 표현을 추가해 보세요.';
- shown.forEach(r=>{const card=element('article','card');card.append(element('h3','',r.phrase));if(r.meaning)card.append(element('p','meaning',r.meaning));(r.examples||[]).forEach((ex,i)=>{const sample=element('div','sample');if(ex.en)sample.append(element('p','en',ex.en));if(ex.ko)sample.append(element('p','ko',ex.ko));card.append(sample)});const actions=element('div','actions row');const edit=element('button','btn','수정'),del=element('button','btn danger','삭제');edit.onclick=()=>{if(confirm('“'+r.phrase+'” 표현을 수정할까요?'))editor(r)};del.onclick=async()=>{if(!confirm('“'+r.phrase+'” 표현을 삭제할까요?'))return;del.disabled=true;try{await api('delete',{id:r.id});await load();flash('삭제했어요.')}catch(e){flash(e.message)}finally{del.disabled=false}};actions.append(edit,del);card.append(actions);$('cards').append(card)})}
+ shown.forEach(r=>{const card=element('article','card');card.dataset.recordId=recordKey(r);card.dataset.phrase=r.phrase;card.tabIndex=0;card.append(element('span','bookmark-label','🔖 책갈피 선택됨'));card.onclick=e=>{if(e.target.closest('button,a,input,textarea')||window.getSelection()?.toString())return;setBookmark(r)};card.onkeydown=e=>{if(e.target===card&&(e.key==='Enter'||e.key===' ')){e.preventDefault();setBookmark(r)}};card.append(element('h3','',r.phrase));if(r.meaning)card.append(element('p','meaning',r.meaning));(r.examples||[]).forEach((ex,i)=>{const sample=element('div','sample');if(ex.en)sample.append(element('p','en',ex.en));if(ex.ko)sample.append(element('p','ko',ex.ko));card.append(sample)});const actions=element('div','actions row');const edit=element('button','btn','수정'),del=element('button','btn danger','삭제');edit.onclick=()=>{if(confirm('“'+r.phrase+'” 표현을 수정할까요?'))editor(r)};del.onclick=async()=>{if(!confirm('“'+r.phrase+'” 표현을 삭제할까요?'))return;del.disabled=true;try{await api('delete',{id:r.id});await load();flash('삭제했어요.')}catch(e){flash(e.message)}finally{del.disabled=false}};actions.append(edit,del);card.append(actions);$('cards').append(card)});
+ $('summaryBody').replaceChildren();shown.forEach(r=>{const row=element('tr');row.dataset.recordId=recordKey(r);const phrase=element('td'),meaning=element('td','',r.meaning||'');const open=element('button','',r.phrase);open.type='button';open.title='이 표현의 카드로 이동';open.onclick=()=>{setBookmark(r);showView(false);scrollToRecord(recordKey(r))};phrase.append(open);row.append(phrase,meaning);$('summaryBody').append(row)});updateBookmarkUI();} 
 $('search').oninput=render;
 })();
 </script>
