@@ -20,6 +20,9 @@
 /* Selection is temporary; bookmark remains independent. */
 .card.is-selected{border:2px solid #4d67df;background:#f1f4ff;box-shadow:0 0 0 3px #4d67df20}.card.is-bookmarked{border-color:#4d67df}.card{touch-action:pan-y;-webkit-touch-callout:none}.card.is-pressing{box-shadow:inset 0 0 0 2px #758be5}#summaryView{touch-action:pan-y}
 .summary-table tbody tr{cursor:pointer;touch-action:pan-y;-webkit-touch-callout:none}.summary-phrase{font-weight:700}.summary-table tbody tr:focus-visible{outline:2px solid #4d67df;outline-offset:-2px}.summary-table tr.is-pressing td{background:#f1f4ff}
+/* Selection and bookmarks: preserve original background; blue outline only. */
+.card.is-selected,.card.is-bookmarked{background:#fff;border:1px solid #e2e7f0;outline:2px solid #4d67df;outline-offset:-1px;box-shadow:0 7px 20px #15213a0b}.card.is-pressing{box-shadow:0 7px 20px #15213a0b}
+.summary-table tr.is-selected td,.summary-table tr.is-bookmarked td,.summary-table tr.is-pressing td{background:#fff}.summary-table tr.is-selected,.summary-table tr.is-bookmarked{outline:2px solid #4d67df;outline-offset:-2px}
 </style>
 </head>
 <body>
@@ -48,7 +51,7 @@ function updateBookmarkUI(){
  $('bookmarkInfo').textContent=marked?'🔖 책갈피: '+marked.phrase+' · 카드를 꾹 누르면 책갈피가 변경됩니다.':'짧게 누르면 선택, 꾹 누르면 책갈피로 저장됩니다. 다음 접속 시 해당 위치로 이동합니다.';
  $('goBookmark').disabled=!marked;$('clearBookmark').disabled=!bookmarkId;
 }
-function setBookmark(r){bookmarkId=recordKey(r);let saved=true;try{localStorage.setItem(BOOKMARK_KEY,bookmarkId)}catch{saved=false}updateBookmarkUI();if(!saved)flash('브라우저 저장이 제한되어 이번 접속에서만 책갈피가 유지됩니다.')}
+function setBookmark(r){const removing=bookmarkId===recordKey(r);bookmarkId=removing?null:recordKey(r);let saved=true;try{if(bookmarkId)localStorage.setItem(BOOKMARK_KEY,bookmarkId);else localStorage.removeItem(BOOKMARK_KEY)}catch{saved=false}updateBookmarkUI();flash(saved?(removing?'책갈피를 해제했어요.':'책갈피를 저장했어요.'):'브라우저 저장이 제한되어 이번 접속에서만 변경됩니다.')}
 function scrollToRecord(id){const card=[...$('cards').children].find(n=>n.dataset.recordId===id);if(card)requestAnimationFrame(()=>card.scrollIntoView({block:'start',behavior:'auto'}))}
 function showView(summary){$('cards').classList.toggle('hidden',summary);$('summaryView').classList.toggle('hidden',!summary);$('viewCards').setAttribute('aria-pressed',String(!summary));$('viewSummary').setAttribute('aria-pressed',String(summary));if(summary)closeEditor()}
 function attachCardGestures(card,r){
@@ -58,7 +61,7 @@ function attachCardGestures(card,r){
  card.addEventListener('pointerdown',e=>{
   if(!e.isPrimary||e.button!==0||e.target.closest('button,a,input,textarea'))return;
   cancel();start={x:e.clientX,y:e.clientY,id:e.pointerId};card.classList.add('is-pressing');
-  timer=setTimeout(()=>{timer=null;card.classList.remove('is-pressing');suppressUntil=Date.now()+1200;selectedId=recordKey(r);setBookmark(r);flash('책갈피를 저장했어요.')},600);
+  timer=setTimeout(()=>{timer=null;card.classList.remove('is-pressing');suppressUntil=Date.now()+1200;selectedId=recordKey(r);setBookmark(r)},600);
  });
  card.addEventListener('pointermove',e=>{if(start&&Math.hypot(e.clientX-start.x,e.clientY-start.y)>10){cancel();suppressUntil=Date.now()+500}});
  card.addEventListener('pointerup',()=>{cancel();start=null});
@@ -66,7 +69,7 @@ function attachCardGestures(card,r){
  card.addEventListener('pointerleave',cancel);
  card.addEventListener('contextmenu',e=>{if(!e.target.closest('button,a,input,textarea'))e.preventDefault()});
  card.onclick=e=>{if(Date.now()<suppressUntil||e.target.closest('button,a,input,textarea')||window.getSelection()?.toString())return;select()};
- card.onkeydown=e=>{if(e.target!==card)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();if(e.shiftKey){setBookmark(r);flash('책갈피를 저장했어요.')}else select()}};
+ card.onkeydown=e=>{if(e.target!==card)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();if(e.shiftKey){setBookmark(r)}else select()}};
 }
 // Horizontal touch swipes switch views; vertical movement cancels the gesture.
 let swipeStart=null;
