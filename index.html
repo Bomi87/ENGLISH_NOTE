@@ -15,6 +15,10 @@
 }
 /* Bookmark and compact summary views */
 .card{position:relative;cursor:pointer;scroll-margin-top:20px}.card.is-bookmarked{border:2px solid #4d67df;background:#f1f4ff;box-shadow:0 0 0 3px #4d67df20}.bookmark-label{display:none;color:#4059cb;font-size:12px;font-weight:800;margin-bottom:8px}.is-bookmarked .bookmark-label{display:block}.card:focus-visible{outline:3px solid #4d67df;outline-offset:3px}.view-nav{margin:16px 0;gap:8px}.view-nav .btn[aria-pressed="true"]{background:#4d67df;color:white}.bookmark-info{font-size:13px;color:#62718b;overflow-wrap:anywhere}.summary-table{width:100%;table-layout:fixed;border-collapse:collapse;background:white;border:1px solid #e2e7f0}.summary-table th,.summary-table td{text-align:left;padding:10px 12px;border-bottom:1px solid #e2e7f0;overflow-wrap:anywhere;vertical-align:top}.summary-table th{background:#e9eef8;color:#30436e}.summary-table th:first-child{width:40%}.summary-table button{border:0;background:none;color:#19243a;font:inherit;font-weight:700;text-align:left;padding:0;overflow-wrap:anywhere;cursor:pointer}.summary-table tr.is-bookmarked td{background:#eaf0ff}.summary-table tr.is-bookmarked button:before{content:'🔖 ';}.summary-table button:focus-visible{outline:2px solid #4d67df}main>*{min-width:0}.toolbar input{min-width:0;flex-basis:180px}@media(max-width:600px){.summary-table th,.summary-table td{padding:9px 8px;font-size:13px}.view-nav .btn{padding:10px}}
+/* Floating top navigation, clear of mobile safe areas. */
+#backToTop{position:fixed;right:max(16px,env(safe-area-inset-right));bottom:calc(20px + env(safe-area-inset-bottom));z-index:10;border:1px solid #ccd6fc;border-radius:999px;padding:12px 17px;min-height:46px;background:#405bd5;color:#fff;font:inherit;font-size:14px;font-weight:750;box-shadow:0 5px 18px #17213930;cursor:pointer}#backToTop:hover{background:#3049bd}#backToTop:focus-visible{outline:3px solid #91a4ff;outline-offset:3px}#backToTop[hidden]{display:none!important}@media(max-width:600px){#backToTop{right:max(12px,env(safe-area-inset-right));padding:11px 14px;font-size:13px}}
+/* Selection is temporary; bookmark remains independent. */
+.card.is-selected{background:#e4e8ef;box-shadow:inset 0 0 0 2px #a6b1c4}.card.is-bookmarked{border-color:#4d67df}.card{touch-action:pan-y;-webkit-touch-callout:none}.card.is-pressing{box-shadow:inset 0 0 0 2px #758be5}#summaryView{touch-action:pan-y}
 </style>
 </head>
 <body>
@@ -34,18 +38,50 @@ const $=id=>document.getElementById(id);
 let records=[],editing=null,busy=false,sequence=0;
 const pending=new Map();
 const BOOKMARK_KEY='english-bank-bookmark-v1';
-let bookmarkId=null,initialRestoreDone=false;
+let selectedId=null,bookmarkId=null,initialRestoreDone=false;
 try{bookmarkId=localStorage.getItem(BOOKMARK_KEY)||null}catch{}
 function recordKey(r){return String(r.id)}
 function updateBookmarkUI(){
  const marked=records.find(r=>recordKey(r)===bookmarkId);
- document.querySelectorAll('[data-record-id]').forEach(n=>{const selected=n.dataset.recordId===bookmarkId;n.classList.toggle('is-bookmarked',selected);if(n.classList.contains('card'))n.setAttribute('aria-label',n.dataset.phrase+(selected?' · 책갈피 선택됨':' · 클릭하여 책갈피 설정'))});
- $('bookmarkInfo').textContent=marked?'🔖 책갈피: '+marked.phrase+' · 카드 선택 시 변경됩니다.':'카드를 선택하면 책갈피로 저장됩니다. 다음 접속 시 해당 위치로 이동합니다.';
+ document.querySelectorAll('[data-record-id]').forEach(n=>{const selected=n.dataset.recordId===bookmarkId;n.classList.toggle('is-bookmarked',selected);n.classList.toggle('is-selected',n.dataset.recordId===selectedId);if(n.classList.contains('card'))n.setAttribute('aria-label',n.dataset.phrase+(selected?' · 책갈피 선택됨':' · 짧게 눌러 선택, 꾹 눌러 책갈피 설정'))});
+ $('bookmarkInfo').textContent=marked?'🔖 책갈피: '+marked.phrase+' · 카드를 꾹 누르면 책갈피가 변경됩니다.':'짧게 누르면 선택, 꾹 누르면 책갈피로 저장됩니다. 다음 접속 시 해당 위치로 이동합니다.';
  $('goBookmark').disabled=!marked;$('clearBookmark').disabled=!bookmarkId;
 }
 function setBookmark(r){bookmarkId=recordKey(r);let saved=true;try{localStorage.setItem(BOOKMARK_KEY,bookmarkId)}catch{saved=false}updateBookmarkUI();if(!saved)flash('브라우저 저장이 제한되어 이번 접속에서만 책갈피가 유지됩니다.')}
 function scrollToRecord(id){const card=[...$('cards').children].find(n=>n.dataset.recordId===id);if(card)requestAnimationFrame(()=>card.scrollIntoView({block:'start',behavior:'auto'}))}
 function showView(summary){$('cards').classList.toggle('hidden',summary);$('summaryView').classList.toggle('hidden',!summary);$('viewCards').setAttribute('aria-pressed',String(!summary));$('viewSummary').setAttribute('aria-pressed',String(summary));if(summary)closeEditor()}
+function attachCardGestures(card,r){
+ let timer=null,start=null,suppressUntil=0;
+ const cancel=()=>{clearTimeout(timer);timer=null;card.classList.remove('is-pressing')};
+ const select=()=>{selectedId=recordKey(r);updateBookmarkUI()};
+ card.addEventListener('pointerdown',e=>{
+  if(!e.isPrimary||e.button!==0||e.target.closest('button,a,input,textarea'))return;
+  cancel();start={x:e.clientX,y:e.clientY,id:e.pointerId};card.classList.add('is-pressing');
+  timer=setTimeout(()=>{timer=null;card.classList.remove('is-pressing');suppressUntil=Date.now()+1200;selectedId=recordKey(r);setBookmark(r);flash('책갈피를 저장했어요.')},600);
+ });
+ card.addEventListener('pointermove',e=>{if(start&&Math.hypot(e.clientX-start.x,e.clientY-start.y)>10){cancel();suppressUntil=Date.now()+500}});
+ card.addEventListener('pointerup',()=>{cancel();start=null});
+ card.addEventListener('pointercancel',()=>{cancel();start=null;suppressUntil=Date.now()+500});
+ card.addEventListener('pointerleave',cancel);
+ card.addEventListener('contextmenu',e=>{if(!e.target.closest('button,a,input,textarea'))e.preventDefault()});
+ card.onclick=e=>{if(Date.now()<suppressUntil||e.target.closest('button,a,input,textarea')||window.getSelection()?.toString())return;select()};
+ card.onkeydown=e=>{if(e.target!==card)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();if(e.shiftKey){setBookmark(r);flash('책갈피를 저장했어요.')}else select()}};
+}
+// Horizontal touch swipes switch views; vertical movement cancels the gesture.
+let swipeStart=null;
+document.querySelector('main').addEventListener('touchstart',e=>{
+ if(e.touches.length!==1||e.target.closest('button,a,input,textarea,select,#editor')){swipeStart=null;return}
+ const t=e.touches[0];swipeStart={x:t.clientX,y:t.clientY,time:Date.now()};
+},{passive:true});
+document.querySelector('main').addEventListener('touchmove',e=>{if(!swipeStart)return;if(e.touches.length!==1){swipeStart=null;return}const t=e.touches[0];if(Math.abs(t.clientY-swipeStart.y)>35)swipeStart=null},{passive:true});
+document.querySelector('main').addEventListener('touchend',e=>{
+ if(!swipeStart)return;const start=swipeStart;swipeStart=null;const t=e.changedTouches[0];if(!t)return;
+ const dx=t.clientX-start.x,dy=t.clientY-start.y;
+ if(Date.now()-start.time>550||Math.abs(dx)<70||Math.abs(dx)<Math.abs(dy)*1.8)return;
+ const summary=!$('summaryView').classList.contains('hidden');
+ if(dx<0&&!summary)showView(true);else if(dx>0&&summary)showView(false);
+},{passive:true});
+document.querySelector('main').addEventListener('touchcancel',()=>{swipeStart=null},{passive:true});
 $('viewCards').onclick=()=>showView(false);$('viewSummary').onclick=()=>showView(true);
 $('goBookmark').onclick=()=>{if(!bookmarkId)return;$('search').value='';render();showView(false);scrollToRecord(bookmarkId)};
 $('clearBookmark').onclick=()=>{bookmarkId=null;try{localStorage.removeItem(BOOKMARK_KEY)}catch{}updateBookmarkUI()};
@@ -90,9 +126,20 @@ function closeEditor(){editing=null;$('editor').classList.add('hidden')}
 $('new').onclick=()=>editor();$('cancel').onclick=closeEditor;$('addExample').onclick=()=>addExample();
 $('entryForm').onsubmit=async e=>{e.preventDefault();if(busy)return;const phrase=$('phrase').value.trim(),meaning=$('meaning').value.trim();if(!phrase)return;const examples=[...$('examples').children].map(row=>({en:row.querySelector('.enInput').value.trim(),ko:row.querySelector('.koInput').value.trim()})).filter(x=>x.en||x.ko);const record={phrase,meaning,examples};if(editing)record.id=editing;setBusy(true);try{await api(editing?'update':'create',{record});closeEditor();await load();flash('Google Sheets에 저장했어요.')}catch(err){flash(err.message)}finally{setBusy(false)}};
 function render(){const q=$('search').value.trim().toLowerCase();const shown=records.filter(r=>[r.phrase,r.meaning,...(r.examples||[]).flatMap(x=>[x.en,x.ko])].some(x=>String(x||'').toLowerCase().includes(q)));$('cards').replaceChildren();$('count').textContent=`${records.length}개 표현 / 검색 ${shown.length}개`;$('empty').classList.toggle('hidden',shown.length>0);$('empty').textContent=records.length?'검색 결과가 없어요.':'저장된 표현이 없어요. 새 표현을 추가해 보세요.';
- shown.forEach(r=>{const card=element('article','card');card.dataset.recordId=recordKey(r);card.dataset.phrase=r.phrase;card.tabIndex=0;card.append(element('span','bookmark-label','🔖 책갈피 선택됨'));card.onclick=e=>{if(e.target.closest('button,a,input,textarea')||window.getSelection()?.toString())return;setBookmark(r)};card.onkeydown=e=>{if(e.target===card&&(e.key==='Enter'||e.key===' ')){e.preventDefault();setBookmark(r)}};card.append(element('h3','',r.phrase));if(r.meaning)card.append(element('p','meaning',r.meaning));(r.examples||[]).forEach((ex,i)=>{const sample=element('div','sample');if(ex.en)sample.append(element('p','en',ex.en));if(ex.ko)sample.append(element('p','ko',ex.ko));card.append(sample)});const actions=element('div','actions row');const edit=element('button','btn','수정'),del=element('button','btn danger','삭제');edit.onclick=()=>{if(confirm('“'+r.phrase+'” 표현을 수정할까요?'))editor(r)};del.onclick=async()=>{if(!confirm('“'+r.phrase+'” 표현을 삭제할까요?'))return;del.disabled=true;try{await api('delete',{id:r.id});await load();flash('삭제했어요.')}catch(e){flash(e.message)}finally{del.disabled=false}};actions.append(edit,del);card.append(actions);$('cards').append(card)});
- $('summaryBody').replaceChildren();shown.forEach(r=>{const row=element('tr');row.dataset.recordId=recordKey(r);const phrase=element('td'),meaning=element('td','',r.meaning||'');const open=element('button','',r.phrase);open.type='button';open.title='이 표현의 카드로 이동';open.onclick=()=>{setBookmark(r);showView(false);scrollToRecord(recordKey(r))};phrase.append(open);row.append(phrase,meaning);$('summaryBody').append(row)});updateBookmarkUI();} 
+ shown.forEach(r=>{const card=element('article','card');card.dataset.recordId=recordKey(r);card.dataset.phrase=r.phrase;card.tabIndex=0;card.append(element('span','bookmark-label','🔖 책갈피 선택됨'));attachCardGestures(card,r);card.append(element('h3','',r.phrase));if(r.meaning)card.append(element('p','meaning',r.meaning));(r.examples||[]).forEach((ex,i)=>{const sample=element('div','sample');if(ex.en)sample.append(element('p','en',ex.en));if(ex.ko)sample.append(element('p','ko',ex.ko));card.append(sample)});const actions=element('div','actions row');const edit=element('button','btn','수정'),del=element('button','btn danger','삭제');edit.onclick=()=>{if(confirm('“'+r.phrase+'” 표현을 수정할까요?'))editor(r)};del.onclick=async()=>{if(!confirm('“'+r.phrase+'” 표현을 삭제할까요?'))return;del.disabled=true;try{await api('delete',{id:r.id});await load();flash('삭제했어요.')}catch(e){flash(e.message)}finally{del.disabled=false}};actions.append(edit,del);card.append(actions);$('cards').append(card)});
+ $('summaryBody').replaceChildren();shown.forEach(r=>{const row=element('tr');row.dataset.recordId=recordKey(r);const phrase=element('td'),meaning=element('td','',r.meaning||'');const open=element('button','',r.phrase);open.type='button';open.title='이 표현의 카드로 이동';open.onclick=()=>{selectedId=recordKey(r);updateBookmarkUI();showView(false);scrollToRecord(recordKey(r))};phrase.append(open);row.append(phrase,meaning);$('summaryBody').append(row)});updateBookmarkUI();} 
 $('search').oninput=render;
+})();
+</script>
+<button id="backToTop" type="button" aria-label="페이지 맨 위로 이동" hidden>↑ 맨 위로</button>
+<script>
+(()=>{
+ const button=document.getElementById('backToTop');
+ const update=()=>{button.hidden=window.scrollY<400};
+ window.addEventListener('scroll',update,{passive:true});
+ window.addEventListener('pageshow',update);
+ button.addEventListener('click',()=>{window.scrollTo({top:0,left:0,behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'})});
+ update();
 })();
 </script>
 </body>
